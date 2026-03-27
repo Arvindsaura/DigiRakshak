@@ -1,0 +1,46 @@
+{
+    "expo": {
+        "name": "DigiRakshak",
+        "slug": "digirakshak",
+        "version": "1.0.0",
+        "orientation": "portrait",
+        "icon": "./assets/icon.png",
+        "userInterfaceStyle": "dark",
+        "splash": {
+            "image": "./assets/splash.png",
+            "resizeMode": "contain",
+            "backgroundColor": "#0A0A0F"
+        },
+        "assetBundlePatterns": [
+            "**/*"
+        ],
+        "ios": {
+            "supportsTablet": false,
+            "bundleIdentifier": "com.digirakshak.app",
+            "infoPlist": {
+                "NSCameraUsageDescription": "DigiRakshak uses the camera to scan QR codes for fraud detection.",
+                "NSMicrophoneUsageDescription": "Not used."
+            }
+        },
+        "android": {
+            "adaptiveIcon": {
+                "foregroundImage": "./assets/adaptive-icon.png",
+                "backgroundColor": "#0A0A0F"
+            },
+            "package": "com.digirakshak.app",
+            "permissions": [
+                "READ_SMS",
+                "RECEIVE_SMS",
+                "CAMERA",
+                "VIBRATE"
+            ]
+        },
+        "web": {
+            "favicon": "./assets/favicon.png"
+        },
+        "plugins": [
+            "expo-router"
+        ],
+        "scheme": "digirakshak"
+    }
+}

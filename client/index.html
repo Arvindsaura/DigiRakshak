@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digi Rakshak - Login</title>
+
+ 
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: url('b.jpeg') no-repeat center center fixed;
+      background-size: cover;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      color: #fff;
+    }
+
+    .container {
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(12px);
+      border-radius: 20px;
+      padding: 30px;
+      width: 350px;
+      border: 2px solid #fff;
+      box-shadow: 0 4px 30px rgba(0,0,0,0.4);
+      text-align: center;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .container:hover {
+      transform: scale(1.02);
+      box-shadow: 0 6px 40px rgba(255, 255, 255, 0.3);
+    }
+
+    .logo img {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      border: 3px solid #fff;
+    }
+
+    .logo h1 {
+      margin: 10px 0 5px;
+      font-size: 28px;
+      font-weight: bold;
+      color: #ffdf5a;
+    }
+
+    .logo p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .form-container { margin-top: 20px; }
+
+    input {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border: none;
+      border-radius: 8px;
+      outline: none;
+      font-size: 14px;
+    }
+
+    button {
+      background: #ffdf5a;
+      color: #333;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      width: 100%;
+      transition: 0.3s;
+      font-weight: bold;
+    }
+
+    button:hover { background: #ffcc00; }
+
+    .link {
+      color: #ffdf5a;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    .hidden { display: none; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <div class="logo">
+      <img src="logo.jpg" alt="App Logo" />
+      <h1>Digi Rakshak</h1>
+      <p>Learn Safe Digital Payments the Fun Way!</p>
+    </div>
+
+   
+    <div class="form-container" id="login-form">
+      <h2>Login</h2>
+      <input type="email" id="login-email" placeholder="Enter your email" required />
+      <input type="password" id="login-password" placeholder="Enter your password" required />
+      <button onclick="loginUser()">Login</button>
+
+      <p>Don't have an account? <span class="link" onclick="toggleForm()">Sign Up</span></p>
+
+     
+      <div id="g_id_onload"
+           data-client_id="YOUR_GOOGLE_CLIENT_ID"
+           data-login_uri="http://localhost:5000/api/google-login"
+           data-auto_prompt="false">
+      </div>
+      <div class="g_id_signin"
+           data-type="standard"
+           data-shape="rectangular"
+           data-theme="outline"
+           data-text="signin_with"
+           data-size="large"
+           data-logo_alignment="left">
+      </div>
+    </div>
+
+   
+    <div class="form-container hidden" id="signup-form">
+      <h2>Sign Up</h2>
+      <input type="text" id="signup-name" placeholder="Full Name" required />
+      <input type="email" id="signup-email" placeholder="Email" required />
+      <input type="password" id="signup-password" placeholder="Password" required />
+      <button onclick="registerUser()">Sign Up</button>
+
+      <p>Already have an account? <span class="link" onclick="toggleForm()">Login</span></p>
+    </div>
+  </div>
+
+  <script>
+    function toggleForm() {
+      document.getElementById("login-form").classList.toggle("hidden");
+      document.getElementById("signup-form").classList.toggle("hidden");
+    }
+
+  
+    function validateEmail(email) {
+      const gmailPattern = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+      return gmailPattern.test(email);
+    }
+
+    function validatePassword(password) {
+      return password.length >= 6;
+    }
+
+   
+    function registerUser() {
+      const name = document.getElementById("signup-name").value.trim();
+      const email = document.getElementById("signup-email").value.trim();
+      const password = document.getElementById("signup-password").value.trim();
+
+      if (!name || !email || !password) {
+        alert("Please fill all fields!");
+        return;
+      }
+
+      if (!validateEmail(email)) {
+        alert("Please enter a valid Gmail address (must end with @gmail.com)");
+        return;
+      }
+
+      if (!validatePassword(password)) {
+        alert("Password must be at least 6 characters long!");
+        return;
+      }
+
+      fetch("http://localhost:5000/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password })
+      })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || "Account created!");
+        if (data.success) toggleForm();
+      })
+      .catch(() => alert("Server error"));
+    }
+
+   
+    function loginUser() {
+      const email = document.getElementById("login-email").value.trim();
+      const password = document.getElementById("login-password").value.trim();
+
+      if (!email || !password) {
+        alert("Please fill both fields!");
+        return;
+      }
+
+      if (!validateEmail(email)) {
+        alert("Please enter a valid Gmail address (must end with @gmail.com)");
+        return;
+      }
+
+      if (!validatePassword(password)) {
+        alert("Password must be at least 6 characters long!");
+        return;
+      }
+
+      fetch("http://localhost:5000/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          alert("Login successful!");
+          localStorage.setItem("user", JSON.stringify(data.user));
+          window.location.href = "game.html";
+        } else {
+          alert(data.message || "Invalid credentials");
+        }
+      })
+      .catch(() => alert("Server error"));
+    }
+  </script>
+</body>
+</html>
+

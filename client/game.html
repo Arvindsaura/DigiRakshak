@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digi Rakshak - Fraud Awareness Game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Poppins', sans-serif;
+      background-color: #000;
+      color: #f5f5f5;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+
+    .menu-toggle {
+      position: fixed; top: 15px; left: 20px;
+      font-size: 28px; color: #fff; background: none; border: none;
+      cursor: pointer; z-index: 1001;
+    }
+
+    .menu {
+      position: fixed; top: 0; left: 0; background: rgba(255,255,255,0.1);
+      width: 220px; height: 100vh; border-right: 1px solid #fff; padding: 20px;
+      transition: transform 0.3s ease; transform: translateX(-100%);
+      z-index: 1000;
+    }
+    .menu.active { transform: translateX(0); }
+    .menu h2 { color: #ffdf5a; text-align: center; margin-bottom: 20px; }
+    .menu a {
+      display: block; color: #fff; text-decoration: none; margin: 10px 0;
+      padding: 10px; border-radius: 8px; transition: 0.3s; cursor: pointer;
+    }
+    .menu a:hover { background-color: #ffdf5a; color: #000; }
+
+    .popup {
+      display: none; position: fixed; top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(0,0,0,0.9); border: 2px solid #fff;
+      border-radius: 10px; padding: 20px; width: 320px; z-index: 1002;
+      text-align: center;
+    }
+    .popup h3 { color: #ffdf5a; }
+    .popup p { color: #fff; margin: 8px 0; }
+    .popup button { margin-top: 10px; padding: 8px 15px; border: none;
+      background: #ffdf5a; color: #000; border-radius: 6px; cursor: pointer; }
+
+    .quiz-container {
+      background: rgba(255,255,255,0.05);
+      border: 2px solid #fff;
+      border-radius: 12px;
+      padding: 25px;
+      width: 600px;
+      text-align: center;
+      box-shadow: 0 0 15px rgba(255,255,255,0.2);
+    }
+
+    .question { font-size: 20px; margin-bottom: 20px; color: #eaeaea; }
+
+    .options button {
+      display: block; width: 100%; margin: 10px 0; padding: 10px;
+      background: transparent; color: #fff; border: 1px solid #fff;
+      border-radius: 8px; cursor: pointer; transition: background 0.3s, color 0.3s;
+    }
+    .options button:hover { background: #fff; color: #000; }
+
+    .correct { background-color: #28a745 !important; color: #fff; border-color: #28a745; }
+    .wrong { background-color: #dc3545 !important; color: #fff; border-color: #dc3545; }
+
+    .explanation {
+      margin-top: 20px; font-size: 16px; color: #b0ffc5; line-height: 1.5;
+      background: rgba(255,255,255,0.08); padding: 10px; border-radius: 10px; display: none;
+    }
+
+    .next-btn {
+      margin-top: 20px; background: #ffdf5a; color: #000; border: none;
+      padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer;
+    }
+    .next-btn:hover { background: #ffcc00; }
+
+    @media(max-width:700px){ .quiz-container{ width: 90%; } .menu{ width: 180px; } }
+  </style>
+</head>
+
+<body>
+  <button class="menu-toggle" id="menuBtn">☰</button>
+
+  <div class="menu" id="sidebarMenu">
+    <h2>Menu</h2>
+    <a id="homeBtn"> Home</a>
+    <a id="profileBtn"> Profile</a>
+    <a id="leaderBtn"> Leaderboard</a>
+    <a id="helpBtn"> Help</a>
+    <a id="logoutBtn"> Logout</a>
+  </div>
+
+  <div class="popup" id="helpPopup">
+    <h3>Help</h3>
+    <p> 9515071636</p>
+    <p> boppanamaheswari@gmail.com</p>
+    <button onclick="closePopup('helpPopup')">Close</button>
+  </div>
+
+  <div class="popup" id="profilePopup">
+    <h3>Profile</h3>
+    <p id="pname"></p>
+    <p id="pemail"></p>
+    <p id="pscore"></p>
+    <button onclick="closePopup('profilePopup')">Close</button>
+  </div>
+
+  <div class="popup" id="leaderPopup">
+    <h3>Leaderboard</h3>
+    <div id="leaderList"></div>
+    <button onclick="closePopup('leaderPopup')">Close</button>
+  </div>
+
+  <div class="quiz-container" id="quiz-box">
+    <div id="question" class="question"></div>
+    <div class="options" id="options"></div>
+    <div id="explanation" class="explanation"></div>
+    <button class="next-btn" id="next-btn" onclick="nextQuestion()">Next Question</button>
+  </div>
+
+ <script>
+
+  const menuBtn = document.getElementById("menuBtn");
+  const sidebarMenu = document.getElementById("sidebarMenu");
+  menuBtn.addEventListener("click", () => sidebarMenu.classList.toggle("active"));
+
+  function closePopup(id){ document.getElementById(id).style.display="none"; }
+  function showPopup(id){ closeAllPopups(); document.getElementById(id).style.display="block"; }
+  function closeAllPopups(){
+    ["helpPopup","profilePopup","leaderPopup"].forEach(id=>{
+      document.getElementById(id).style.display="none";
+    });
+  }
+
+  document.getElementById("helpBtn").onclick=()=>showPopup("helpPopup");
+  document.getElementById("profileBtn").onclick=()=>showProfile();
+  document.getElementById("leaderBtn").onclick=()=>showLeaderboard();
+  document.getElementById("logoutBtn").onclick=()=>logout();
+
+
+  if(!localStorage.getItem("user")){
+    const name=prompt("Enter your name:");
+    const email=prompt("Enter your email:");
+    localStorage.setItem("user", JSON.stringify({name,email,score:0,attempted:false}));
+  }
+
+  const user = JSON.parse(localStorage.getItem("user"));
+  const quizBox=document.getElementById("quiz-box");
+
+ 
+  const quizData = [
+    { question:"A stranger asks for your OTP claiming to be from your bank. What should you do?",
+      options:["Share the OTP","Ignore and report the call","Ask for their ID","Give half of the OTP"],
+      correct:1, story:"Banks never ask for OTPs. Report such calls immediately." },
+    { question:"You get an SMS with a cashback link. What should you do?",
+      options:["Click link","Forward to friends","Ignore/report spam","Call number in SMS"],
+      correct:2, story:"Never click random links; open the official app only." },
+    { question:"A friend asks for urgent money via WhatsApp. What should you do?",
+      options:["Send immediately","Ask questions","Ignore","Call them directly"],
+      correct:3, story:"Call your friend first; hackers can clone profiles." },
+    { question:"Which password is safest?",
+      options:["123456","password","Maheswari@2025","abcd"],
+      correct:2, story:"Strong passwords use a mix of letters, numbers & symbols." },
+    { question:"Online ad offers free iPhone if you fill card details?",
+      options:["Fill details","Report as scam","Share with others","Check later"],
+      correct:1, story:"Fake offers collect data. Never enter card details." },
+    { question:"Which is secure for online payment?",
+      options:["Public Wi-Fi","VPN","Cyber cafe","Shared device"],
+      correct:1, story:"Use secure networks or VPNs for transactions." },
+    { question:"Someone emails you saying you won a lottery?",
+      options:["Reply with info","Ignore/delete","Send bank details","Click their link"],
+      correct:1, story:"Lottery scams trick people into giving bank info." },
+    { question:"What is phishing?",
+      options:["Fishing game","Fake websites stealing info","Hackers playing games","File sharing"],
+      correct:1, story:"Phishing means fake sites or messages stealing data." },
+    { question:"ATM machine doesn’t return your card; what do you do?",
+      options:["Leave","Ask stranger","Call bank helpline","Try again"],
+      correct:2, story:"Call bank immediately; block your card." },
+    { question:"Best way to verify a government message?",
+      options:["Trust any link","Check official site","Forward to others","Call unknown number"],
+      correct:1, story:"Only trust official .gov.in websites." }
+  ];
+
+  let currentQuestion=0;
+  let score=0;
+
+
+  if(user.attempted){
+    quizBox.innerHTML=`<h2>🎉 You already completed the quiz!</h2><p>Your score: ${user.score}/10</p>`;
+  } else {
+    loadQuestion();
+  }
+
+
+  function loadQuestion(){
+    const q=quizData[currentQuestion];
+    document.getElementById("question").textContent=`Q${currentQuestion+1}. ${q.question}`;
+    const optionsDiv=document.getElementById("options");
+    optionsDiv.innerHTML="";
+    q.options.forEach((opt,i)=>{
+      const btn=document.createElement("button");
+      btn.textContent=opt;
+      btn.onclick=()=>checkAnswer(i);
+      optionsDiv.appendChild(btn);
+    });
+    document.getElementById("explanation").style.display="none";
+    document.getElementById("next-btn").style.display="none";
+  }
+
+
+  function checkAnswer(selected){
+    const q=quizData[currentQuestion];
+    const optionButtons=document.querySelectorAll(".options button");
+    optionButtons.forEach((btn,i)=>{
+      btn.disabled=true;
+      if(i===q.correct) btn.classList.add("correct");
+      else if(i===selected && selected!==q.correct) btn.classList.add("wrong");
+    });
+
+    if(selected===q.correct){
+      score++;
+      updateLeaderboardLive(score);  
+    }
+
+    const exp=document.getElementById("explanation");
+    exp.innerHTML=`<strong>Story:</strong> ${q.story}`;
+    exp.style.display="block";
+    document.getElementById("next-btn").style.display="inline-block";
+  }
+
+ 
+  function nextQuestion(){
+    currentQuestion++;
+    if(currentQuestion<quizData.length){
+      loadQuestion();
+    } else {
+      document.getElementById("quiz-box").innerHTML=
+        `<h2>🎉 You completed the Fraud Awareness Game!</h2><p>Your score: ${score}/10</p>`;
+      user.score=score;
+      user.attempted=true;
+      localStorage.setItem("user", JSON.stringify(user));
+      updateLeaderboardLive(score);
+    }
+  }
+
+
+  function updateLeaderboardLive(currentScore){
+    const name = user.name;
+    const email = user.email;
+    let board = JSON.parse(localStorage.getItem("leaderboard")) || [];
+
+    const existing = board.find(b => b.email === email);
+    if (existing) {
+      if (existing.score < currentScore) existing.score = currentScore;
+    } else {
+      board.push({ name, email, score: currentScore });
+    }
+
+    board.sort((a, b) => b.score - a.score);
+    localStorage.setItem("leaderboard", JSON.stringify(board));
+
+    refreshLeaderboardDisplay();
+  }
+
+ 
+  function showLeaderboard(){
+    refreshLeaderboardDisplay();
+    showPopup("leaderPopup");
+  }
+
+ 
+  function refreshLeaderboardDisplay(){
+    const list = document.getElementById("leaderList");
+    let board = JSON.parse(localStorage.getItem("leaderboard")) || [];
+
+    board.sort((a,b)=>b.score-a.score);
+    list.innerHTML="";
+    if(board.length===0){
+      list.innerHTML="<p>No scores yet.</p>";
+      return;
+    }
+    board.forEach((b,i)=>{
+      const div=document.createElement("p");
+      div.textContent=`${i+1}. ${b.name} - ${b.score}/10`;
+      list.appendChild(div);
+    });
+  }
+
+  
+  function showProfile(){
+    const u=JSON.parse(localStorage.getItem("user"));
+    document.getElementById("pname").textContent="Name: "+u.name;
+    document.getElementById("pemail").textContent="Email: "+u.email;
+    document.getElementById("pscore").textContent="Score: "+u.score+"/10";
+    showPopup("profilePopup");
+  }
+
+  
+  function logout(){
+    localStorage.removeItem("user");
+    window.location.href="index.html";
+  }
+</script>
+
+</body>
+</html>
+
