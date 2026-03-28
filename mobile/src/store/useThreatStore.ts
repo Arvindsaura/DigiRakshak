@@ -3,6 +3,7 @@
  * Manages real-time alerts, threat history, and settings.
  */
 import { create } from "zustand";
+import { Platform } from "react-native";
 
 export type RiskLevel = "safe" | "warning" | "high" | "critical";
 
@@ -69,7 +70,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   auto_block_threshold: 70,
   notifications_enabled: true,
   haptic_feedback: true,
-  api_base_url: "http://localhost:8000/api/v1",
+  api_base_url: Platform.OS === "android" ? "http://10.0.2.2:8000/api/v1" : "http://localhost:8000/api/v1",
 };
 
 export const useThreatStore = create<ThreatStore>((set, get) => ({

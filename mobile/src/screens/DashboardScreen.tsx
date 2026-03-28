@@ -8,9 +8,8 @@ import {
     Text,
     StyleSheet,
     ScrollView,
-    TouchableOpacity,
-    Alert,
     Dimensions,
+    DeviceEventEmitter,
 } from "react-native";
 
 import { useThreatStore } from "../store/useThreatStore";
@@ -22,25 +21,7 @@ import { analyzeSMS } from "../utils/api";
 
 const { width } = Dimensions.get("window");
 
-// Simulated incoming SMS messages for the background listener demo
-const SIMULATED_SMS = [
-    {
-        sender: "VM-HDFCBK",
-        text: "URGENT: Your HDFC account has been FROZEN! Verify at http://hdfc-secure-login.tk NOW to avoid permanent closure!",
-    },
-    {
-        sender: "+919876543210",
-        text: "Your Swiggy order #SY234 is out for delivery. Estimated arrival: 20 minutes.",
-    },
-    {
-        sender: "JD-PAYTM",
-        text: "ALERT: Your KYC is expiring TODAY! Update at http://paytm-kyc-update.net or account will be BLOCKED permanently!",
-    },
-    {
-        sender: "BW-IRCTC",
-        text: "IRCTC: Your ticket PNR 456789123 for Train 12301 is confirmed. Departs 16:45 from NDLS.",
-    },
-];
+
 
 export default function DashboardScreen() {
     const {
@@ -56,10 +37,7 @@ export default function DashboardScreen() {
         getRiskLevel,
     } = useThreatStore();
 
-    const [shimmerActive, setShimmerActive] = useState(false);
     const [serverStatus, setServerStatus] = useState<"connected" | "offline" | "checking">("checking");
-    const simulationRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const smsIndex = useRef(0);
 
     const checkServer = useCallback(async () => {
         try {
@@ -72,17 +50,11 @@ export default function DashboardScreen() {
         }
     }, []);
 
-    useEffect(() => {
-        checkServer();
-    }, []);
-
-    const simulateIncomingSMS = useCallback(async () => {
-        const sms = SIMULATED_SMS[smsIndex.current % SIMULATED_SMS.length];
-        smsIndex.current++;
+    const handleIncomingSMS = useCallback(async (sms: { sender: string; text: string }) => {
+        if (!sms.text) return;
 
         setScanning(true);
         setShieldStatus("scanning");
-        setShimmerActive(true);
 
         try {
             const result = await analyzeSMS(sms.text, sms.sender);
@@ -104,51 +76,23 @@ export default function DashboardScreen() {
 
             setActiveAlert(alert);
             addToHistory(alert);
-            setShieldStatus(result.label === "phishing" ? "active" : "active");
         } catch (err) {
-            // Fallback: demo mode with static data when server is offline
-            const mockScore = Math.random() > 0.5 ? 85 : 10;
-            const mockLabel = mockScore > 50 ? "phishing" : "safe";
-            const alert = {
-                id: generateId(),
-                type: "sms" as const,
-                label: mockLabel,
-                risk_score: mockScore,
-                risk_level: getRiskLevel(mockScore),
-                reasoning:
-                    mockLabel === "phishing"
-                        ? "⚠️ Demo mode: Phishing indicators detected (server offline)"
-                        : "✅ Demo mode: Message appears safe (server offline)",
-                raw_input: sms.text,
-                sender: sms.sender,
-                timestamp: new Date().toISOString(),
-            };
-            setActiveAlert(alert);
-            addToHistory(alert);
+            console.error("SMS Analysis failed", err);
         } finally {
             setScanning(false);
-            setShimmerActive(false);
             setShieldStatus("active");
         }
     }, []);
-
-    const toggleSimulation = () => {
-        if (simulationRef.current) {
-            clearInterval(simulationRef.current);
-            simulationRef.current = null;
-            setShieldStatus("inactive");
-        } else {
-            simulationRef.current = setInterval(simulateIncomingSMS, 6000);
-            simulateIncomingSMS();
-            setShieldStatus("active");
-        }
-    };
 
     useEffect(() => {
+        checkServer();
+        
+        // Listen to Real Android SMS Events
+        const subscription = DeviceEventEmitter.addListener('onSMSReceived', handleIncomingSMS);
         return () => {
-            if (simulationRef.current) clearInterval(simulationRef.current);
+            subscription.remove();
         };
-    }, []);
+    }, [handleIncomingSMS]);
 
     const statusColors = {
         active: "#30D158",
@@ -236,24 +180,7 @@ export default function DashboardScreen() {
                 />
             )}
 
-            {/* ── Simulate Button ── */}
-            <TouchableOpacity
-                onPress={toggleSimulation}
-                activeOpacity={0.8}
-                style={[
-                    styles.simulateButton,
-                    {
-                        backgroundColor:
-                            simulationRef.current ? "rgba(255,59,48,0.2)" : "rgba(0,102,255,0.2)",
-                        borderColor:
-                            simulationRef.current ? "#FF3B30" : "#0066FF",
-                    },
-                ]}
-            >
-                <Text style={[styles.simulateText, { color: simulationRef.current ? "#FF3B30" : "#0066FF" }]}>
-                    {simulationRef.current ? "⏹ Stop Background Listener" : "▶ Start SMS Listener Simulation"}
-                </Text>
-            </TouchableOpacity>
+
 
             {/* ── Quick Stats ── */}
             <View style={styles.statsRow}>
@@ -335,14 +262,7 @@ const styles = StyleSheet.create({
     shieldIcon: { fontSize: 64 },
     idleText: { fontSize: 22, fontWeight: "700", color: "#FFFFFF" },
     idleSub: { fontSize: 13, color: "rgba(255,255,255,0.4)" },
-    simulateButton: {
-        borderWidth: 1.5,
-        borderRadius: 14,
-        padding: 14,
-        alignItems: "center",
-        marginVertical: 12,
-    },
-    simulateText: { fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
+
     statsRow: {
         flexDirection: "row",
         gap: 10,

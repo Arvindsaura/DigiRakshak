@@ -19,8 +19,9 @@ export default function RootLayout() {
                     backgroundColor: "#0E0E16",
                     borderTopColor: "rgba(255,255,255,0.07)",
                     borderTopWidth: 1,
-                    height: 80,
-                    paddingBottom: 16,
+                    height: 70,
+                    paddingTop: 8,
+                    paddingBottom: 8,
                 },
                 tabBarShowLabel: false,
             }}
@@ -73,9 +74,9 @@ const styles = StyleSheet.create({
     tabItemActive: {
         backgroundColor: "rgba(0,102,255,0.15)",
     },
-    tabIcon: { fontSize: 20 },
+    tabIcon: { fontSize: 24 },
     tabLabel: {
-        fontSize: 9,
+        fontSize: 10,
         color: "rgba(255,255,255,0.3)",
         fontWeight: "600",
         letterSpacing: 0.5,
