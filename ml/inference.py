@@ -2,6 +2,7 @@
 DigiRakshak Inference Engine
 Handles ML predictions + Feature Extraction + Risk Scoring
 """
+
 import os
 import re
 import pickle
@@ -232,43 +233,85 @@ class InferenceEngine:
 # ─── URL-specific checker ─────────────────────────────────────────────────────
 def analyze_url(url: str) -> dict:
     """
-    Standalone URL analyzer — checks blacklist + lookalike patterns.
-    Returns a dict with risk assessment.
+    Standalone URL analyzer — uses XGBoost + TF-IDF model for prediction.
+    Returns a dict with risk assessment mapped to the original expected format.
     """
-    result = {
-        "url": url,
-        "is_blacklisted": False,
-        "is_lookalike": False,
-        "risk_level": "safe",
-        "risk_score": 0,
-        "reason": "URL appears clean.",
-    }
-
+    import os, sys
+    import numpy as np
+    
+    # Fast path: check exact domain match for hardcoded blacklists first
     domain_match = re.search(r"https?://([^/\s]+)", url)
     if domain_match:
         domain = domain_match.group(1).lower().lstrip("www.")
         if domain in BLACKLISTED_DOMAINS:
-            result["is_blacklisted"] = True
-            result["risk_level"] = "critical"
-            result["risk_score"] = 95
-            result["reason"] = f"Domain '{domain}' is on the DigiRakshak blacklist."
-            return result
+            return {
+                "url": url,
+                "is_blacklisted": True,
+                "is_lookalike": False,
+                "risk_level": "critical",
+                "risk_score": 95,
+                "reason": f"Domain '{domain}' is on the DigiRakshak blacklist."
+            }
 
-    for pat in SUSPICIOUS_URL_PATTERNS:
-        if re.search(pat, url, re.IGNORECASE):
-            result["is_lookalike"] = True
-            result["risk_level"] = "high"
-            result["risk_score"] = 78
-            result["reason"] = "URL uses suspicious TLD or mimics a legitimate brand."
-            return result
-
-    # Suspicious keywords in path
-    if re.search(r"(verify|kyc|secure|login|claim|refund|prize|reward)", url, re.IGNORECASE):
-        result["risk_level"] = "medium"
-        result["risk_score"] = 50
-        result["reason"] = "URL path contains suspicious keywords."
-
-    return result
+    try:
+        try:
+            from .url_features import get_url_model
+        except ImportError:
+            from url_features import get_url_model
+            
+        data = get_url_model()
+        model = data['model']
+        le = data['label_encoder']
+        features_extractor = data['features']
+        BEST_THRESHOLD = data.get('phishing_threshold', 0.5)
+        
+        # Determine the phishing index dynamically just in case
+        if 'phishing_class_idx' in data:
+            PHISHING_CLASS_IDX = data['phishing_class_idx']
+        else:
+            PHISHING_CLASS_IDX = list(le.classes_).index('phishing')
+            
+        feat = features_extractor.transform([url])
+        proba = model.predict_proba(feat)[0]
+        
+        ranked = np.argsort(proba)[::-1]
+        pred_idx = ranked[0]
+        
+        if pred_idx == PHISHING_CLASS_IDX and proba[pred_idx] < BEST_THRESHOLD:
+            pred_idx = ranked[1]
+            
+        label = le.inverse_transform([pred_idx])[0]
+        confidence = proba[pred_idx]
+        phishing_conf = proba[PHISHING_CLASS_IDX]
+        
+        risk_score = int(phishing_conf * 100)
+        is_phishing_or_malware = label in ('phishing', 'malware')
+        
+        if is_phishing_or_malware:
+            risk_level = 'critical' if phishing_conf >= 0.8 else 'high'
+            reason = f"AI flagged URL as {label} ({confidence:.0%} confidence)."
+        else:
+            risk_level = 'medium' if phishing_conf >= 0.4 else 'safe'
+            reason = f"URL evaluated as {label} by ML model."
+            
+        return {
+            "url": url,
+            "is_blacklisted": label == 'malware',
+            "is_lookalike": label == 'phishing',
+            "risk_level": risk_level,
+            "risk_score": risk_score,
+            "reason": reason,
+        }
+    except Exception as e:
+        # Graceful fallback if model loading or inference errors out
+        return {
+            "url": url,
+            "is_blacklisted": False,
+            "is_lookalike": False,
+            "risk_level": "medium",
+            "risk_score": 50,
+            "reason": f"AI evaluation failed, default score applied (error: {str(e)}).",
+        }
 
 
 # ─── QR / UPI Analyzer ────────────────────────────────────────────────────────
