@@ -38,17 +38,33 @@ export interface AppSettings {
   sms_scanning: boolean;
   call_scanning: boolean;
   auto_block_threshold: number;
-  notifications_enabled: boolean;
-  haptic_feedback: boolean;
   api_base_url: string;
 }
+
+export interface UserConsent {
+  sms_read: boolean;
+  call_log: boolean;
+  notifications: boolean;
+  edge_ai: boolean;
+}
+
+export interface DeviceContext {
+  isCallActive: boolean;
+  lastCallSender: string | null;
+  lastCallTimestamp: string | null;
+  lastOtpReceiptTime: string | null;
+}
+
 
 interface ThreatStore {
   // State
   activeAlert: ThreatAlert | null;
   threatHistory: ThreatAlert[];
   settings: AppSettings;
+  consent: UserConsent;
+  context: DeviceContext;
   isScanning: boolean;
+  isFirstLaunch: boolean;
   shieldStatus: "active" | "inactive" | "scanning";
 
   // Actions
@@ -57,27 +73,50 @@ interface ThreatStore {
   clearHistory: () => void;
   removeFromHistory: (id: string) => void;
   updateSettings: (settings: Partial<AppSettings>) => void;
+  updateConsent: (consent: Partial<UserConsent>) => void;
+  updateContext: (context: Partial<DeviceContext>) => void;
   setScanning: (scanning: boolean) => void;
+  setFirstLaunchComplete: () => void;
   setShieldStatus: (status: "active" | "inactive" | "scanning") => void;
+
   generateId: () => string;
   getRiskLevel: (score: number) => RiskLevel;
 }
+
 
 const DEFAULT_SETTINGS: AppSettings = {
   sms_scanning: true,
   call_scanning: true,
   auto_block_threshold: 70,
-  notifications_enabled: true,
-  haptic_feedback: true,
   api_base_url: "http://localhost:8000/api/v1",
 };
+
+const DEFAULT_CONSENT: UserConsent = {
+  sms_read: false,
+  call_log: false,
+  notifications: false,
+  edge_ai: true,
+};
+
+const INITIAL_CONTEXT: DeviceContext = {
+  isCallActive: false,
+  lastCallSender: null,
+  lastCallTimestamp: null,
+  lastOtpReceiptTime: null,
+};
+
 
 export const useThreatStore = create<ThreatStore>((set, get) => ({
   activeAlert: null,
   threatHistory: [],
   settings: DEFAULT_SETTINGS,
+  consent: DEFAULT_CONSENT,
+  context: INITIAL_CONTEXT,
   isScanning: false,
-  shieldStatus: "active",
+  isFirstLaunch: true,
+  shieldStatus: "inactive",
+
+
 
   setActiveAlert: (alert) => set({ activeAlert: alert }),
 
@@ -98,9 +137,23 @@ export const useThreatStore = create<ThreatStore>((set, get) => ({
       settings: { ...state.settings, ...partial },
     })),
 
+  updateConsent: (partial) =>
+    set((state) => ({
+      consent: { ...state.consent, ...partial },
+    })),
+
+  updateContext: (partial) =>
+    set((state) => ({
+      context: { ...state.context, ...partial },
+    })),
+
   setScanning: (scanning) => set({ isScanning: scanning }),
 
+  setFirstLaunchComplete: () => set({ isFirstLaunch: false }),
+
   setShieldStatus: (status) => set({ shieldStatus: status }),
+
+
 
   generateId: () =>
     `dr-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,

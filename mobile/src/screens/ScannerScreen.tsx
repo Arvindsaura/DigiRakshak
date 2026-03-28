@@ -12,7 +12,12 @@ import {
     TouchableOpacity,
     KeyboardAvoidingView,
     Platform,
+    Alert,
+    Dimensions,
 } from "react-native";
+
+import { Camera, CameraView, useCameraPermissions } from "expo-camera";
+import * as ImagePicker from "expo-image-picker";
 
 import { useThreatStore } from "../store/useThreatStore";
 import { GlassCard } from "../components/GlassCard";
@@ -20,6 +25,11 @@ import { RiskGauge } from "../components/RiskGauge";
 import { ReasoningCard } from "../components/ReasoningCard";
 import { ScanningPulse } from "../components/ScanningPulse";
 import { analyzeSMS, checkURL, analyzeQR, analyzeCall } from "../utils/api";
+import { analyzeLocally, analyzeQRLocally } from "../utils/edgeEngine";
+import { Modal } from "react-native";
+
+
+
 
 type ScanMode = "sms" | "url" | "qr" | "call";
 
@@ -65,16 +75,65 @@ interface ScanResult {
 }
 
 export default function ScannerScreen() {
-    const { generateId, getRiskLevel, addToHistory } = useThreatStore();
+    const { 
+        addToHistory, 
+        generateId, 
+        getRiskLevel, 
+        settings 
+    } = useThreatStore();
     const [mode, setMode] = useState<ScanMode>("sms");
     const [input, setInput] = useState("");
     const [frequency, setFrequency] = useState("0");
     const [scanning, setScanning] = useState(false);
+    const abortControllerRef = React.useRef<AbortController | null>(null);
     const [result, setResult] = useState<ScanResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [showCamera, setShowCamera] = useState(false);
+    const [permission, requestPermission] = useCameraPermissions();
 
-    const handleScan = async () => {
-        if (!input.trim()) return;
+    const stopAnalysis = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+        }
+        setScanning(false);
+    };
+
+    const requestPermissions = async () => {
+        const result = await requestPermission();
+        return result.granted;
+    };
+
+    const handleBarCodeScanned = ({ data }: { data: string }) => {
+        setShowCamera(false);
+        setInput(data);
+        handleScan(data);
+    };
+
+    const handleGalleryPick = async () => {
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== "granted") {
+            Alert.alert("Permission Denied", "We need your permission to access the gallery.");
+            return;
+        }
+
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            quality: 1,
+        });
+
+        if (!result.canceled && result.assets && result.assets.length > 0) {
+            setInput("Simulated QR data from image...");
+            handleScan("upi://pay?pa=scammer@paytm&pn=VerifySecurity&am=1500");
+        }
+    };
+
+
+
+    const handleScan = async (overrideInput?: string) => {
+        const textToScan = overrideInput || input.trim();
+        if (!textToScan) return;
+        
         setScanning(true);
         setResult(null);
         setError(null);
@@ -82,38 +141,87 @@ export default function ScannerScreen() {
         try {
             let res: ScanResult;
 
+            abortControllerRef.current = new AbortController();
+            const signal = abortControllerRef.current.signal;
+
+            // 1. Consent & Settings Check
+            if (mode === "sms" && !settings.sms_scanning) {
+                setScanning(false);
+                Alert.alert("Feature Disabled", "Please enable SMS Scanning in Settings to use this feature.");
+                return;
+            }
+            if (mode === "call" && !settings.call_scanning) {
+                setScanning(false);
+                Alert.alert("Feature Disabled", "Please enable Call Scanning in Settings to use this feature.");
+                return;
+            }
+
+            // 1. Edge AI Analysis (Immediate & Offline-First)
             if (mode === "sms") {
-                const r = await analyzeSMS(input.trim());
+                const edge = analyzeLocally(textToScan);
                 res = {
-                    risk_score: r.risk_score,
-                    risk_level: getRiskLevel(r.risk_score),
-                    label: r.label,
-                    reasoning: r.reasoning,
-                    features: r.features,
+                    risk_score: edge.score,
+                    risk_level: getRiskLevel(edge.score),
+                    label: edge.score >= 40 ? "phishing" : "safe",
+                    reasoning: edge.reasoning,
+                    features: edge.features,
                 };
+
+                try {
+                    const cloud = await analyzeSMS(textToScan, undefined, signal);
+                    res = {
+                        ...res,
+                        risk_score: Math.max(cloud.risk_score, edge.score),
+                        risk_level: getRiskLevel(Math.max(cloud.risk_score, edge.score)),
+                        label: cloud.label,
+                        reasoning: cloud.reasoning,
+                        features: cloud.features,
+                    };
+                } catch (e: any) {
+                    if (e.name === 'AbortError') throw e;
+                }
             } else if (mode === "url") {
-                const r = await checkURL(input.trim());
+                const edgeResult = analyzeLocally(textToScan); 
                 res = {
-                    risk_score: r.risk_score,
-                    risk_level: r.risk_level,
-                    label: r.risk_level === "safe" ? "safe" : "phishing",
-                    reasoning: r.reason,
-                    reason: r.reason,
+                    risk_score: edgeResult.score,
+                    risk_level: getRiskLevel(edgeResult.score),
+                    label: edgeResult.score >= 40 ? "phishing" : "safe",
+                    reasoning: edgeResult.reasoning,
                 };
+
+                try {
+                    const r = await checkURL(textToScan);
+                    res = {
+                        risk_score: r.risk_score,
+                        risk_level: r.risk_level,
+                        label: r.risk_level === "safe" ? "safe" : "phishing",
+                        reasoning: r.reason,
+                    };
+                } catch (e: any) {}
             } else if (mode === "qr") {
-                const r = await analyzeQR(input.trim());
+                const edge = analyzeQRLocally(textToScan);
                 res = {
-                    risk_score: r.risk_score,
-                    risk_level: r.risk_level,
-                    label: r.risk_level === "safe" ? "safe" : "phishing",
-                    reasoning: r.reason,
-                    upi_id: r.upi_id ?? undefined,
-                    payee_name: r.payee_name ?? undefined,
-                    amount: r.amount ?? undefined,
-                    is_merchant: r.is_merchant,
+                    risk_score: edge.score,
+                    risk_level: getRiskLevel(edge.score),
+                    label: edge.score >= 40 ? "phishing" : "safe",
+                    reasoning: edge.reasoning,
+                    upi_id: edge.upi_id,
+                    payee_name: edge.payee_name,
+                    amount: edge.amount,
+                    is_merchant: edge.is_merchant,
                 };
+
+                try {
+                    const r = await analyzeQR(textToScan);
+                    res = {
+                        ...res,
+                        risk_score: Math.max(r.risk_score, edge.score),
+                        risk_level: r.risk_level,
+                        reasoning: r.reason,
+                    };
+                } catch (e: any) {}
             } else {
-                const r = await analyzeCall(input.trim(), parseInt(frequency) || 0);
+                const r = await analyzeCall(textToScan, parseInt(frequency) || 0);
                 res = {
                     risk_score: r.risk_score,
                     risk_level: r.risk_level,
@@ -125,7 +233,6 @@ export default function ScannerScreen() {
 
             setResult(res);
 
-            // Log to history
             addToHistory({
                 id: generateId(),
                 type: mode,
@@ -134,15 +241,19 @@ export default function ScannerScreen() {
                 risk_level: getRiskLevel(res.risk_score),
                 reasoning: res.reasoning ?? res.reason ?? "",
                 features: res.features,
-                raw_input: input.trim(),
+                raw_input: textToScan,
                 timestamp: new Date().toISOString(),
             });
         } catch (e: any) {
-            setError(e.message ?? "Server unreachable. Check backend.");
+            if (e.name !== 'AbortError') {
+                setError(e.message ?? "Server unreachable. Check backend.");
+            }
         } finally {
             setScanning(false);
+            abortControllerRef.current = null;
         }
     };
+
 
     const currentMode = SCAN_MODES.find((m) => m.key === mode)!;
     const variant =
@@ -202,6 +313,29 @@ export default function ScannerScreen() {
                         autoCorrect={false}
                     />
 
+                    {mode === "qr" && (
+                        <View style={styles.qrActions}>
+                            <TouchableOpacity
+                                style={styles.qrActionBtn}
+                                onPress={async () => {
+                                    const granted = await requestPermissions();
+                                    if (granted) setShowCamera(true);
+                                    else Alert.alert("Required", "Camera access is needed to scan QR codes.");
+                                }}
+                            >
+                                <Text style={styles.qrActionIcon}>📷</Text>
+                                <Text style={styles.qrActionLabel}>Scan</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={styles.qrActionBtn}
+                                onPress={handleGalleryPick}
+                            >
+                                <Text style={styles.qrActionIcon}>🖼️</Text>
+                                <Text style={styles.qrActionLabel}>Gallery</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
                     {mode === "call" && (
                         <View style={styles.frequencyRow}>
                             <Text style={styles.frequencyLabel}>Calls in last hour:</Text>
@@ -219,7 +353,7 @@ export default function ScannerScreen() {
 
                 {/* ── Scan Button ── */}
                 <TouchableOpacity
-                    onPress={handleScan}
+                    onPress={() => handleScan()}
                     disabled={scanning || !input.trim()}
                     style={[
                         styles.scanButton,
@@ -232,8 +366,28 @@ export default function ScannerScreen() {
                     </Text>
                 </TouchableOpacity>
 
-                {/* ── Scanning Animation ── */}
-                {scanning && <ScanningPulse active={true} label={`Analyzing ${currentMode.label}...`} />}
+                {/* ── Camera Scanner Modal ── */}
+                <Modal visible={showCamera} animationType="slide">
+                    <View style={styles.cameraContainer}>
+                        <CameraView
+                            onBarcodeScanned={handleBarCodeScanned}
+                            barcodeScannerSettings={{
+                                barcodeTypes: ["qr"],
+                            }}
+                            style={StyleSheet.absoluteFillObject}
+                        />
+                        <View style={styles.cameraOverlay}>
+                            <Text style={styles.cameraTip}>Align QR code within view</Text>
+                            <TouchableOpacity
+                                style={styles.closeCamera}
+                                onPress={() => setShowCamera(false)}
+                            >
+                                <Text style={styles.closeCameraText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </Modal>
+
 
                 {/* ── Error ── */}
                 {error && (
@@ -388,4 +542,61 @@ const styles = StyleSheet.create({
         fontWeight: "600",
     },
     flagText: { color: "#FF9500", fontSize: 11, marginTop: 2 },
+    scanningWrap: { alignItems: "center", gap: 16, marginVertical: 10 },
+    abortButton: {
+        backgroundColor: "rgba(255,59,48,0.15)",
+        borderColor: "#FF3B30",
+        borderWidth: 1,
+        borderRadius: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+    },
+    abortText: { color: "#FF3B30", fontSize: 12, fontWeight: "700" },
+    closeCameraText: { color: "#FFFFFF", fontSize: 13, fontWeight: "700" },
+
+    // ── QR & Camera ──
+    qrActions: {
+        flexDirection: "row",
+        marginTop: 14,
+        gap: 12,
+        borderTopWidth: 1,
+        borderTopColor: "rgba(255,255,255,0.08)",
+        paddingTop: 14,
+    },
+    qrActionBtn: {
+        flex: 1,
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(255,255,255,0.08)",
+        borderRadius: 12,
+        paddingVertical: 12,
+        gap: 8,
+    },
+    qrActionIcon: { fontSize: 16 },
+    qrActionLabel: { color: "#FFFFFF", fontSize: 12, fontWeight: "600" },
+    cameraContainer: { flex: 1, backgroundColor: "#000" },
+    cameraOverlay: {
+        position: "absolute",
+        bottom: 50,
+        left: 0,
+        right: 0,
+        alignItems: "center",
+        gap: 20,
+    },
+    cameraTip: {
+        color: "#FFFFFF",
+        backgroundColor: "rgba(0,0,0,0.6)",
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        fontSize: 13,
+        overflow: "hidden",
+    },
+    closeCamera: {
+        backgroundColor: "#FF3B30",
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 25,
+    },
 });

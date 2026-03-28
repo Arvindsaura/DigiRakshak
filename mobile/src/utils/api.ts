@@ -10,8 +10,10 @@ const getBaseUrl = () =>
 async function fetchJson<T>(
     endpoint: string,
     method: "GET" | "POST",
-    body?: object
+    body?: object,
+    signal?: AbortSignal
 ): Promise<T> {
+
     const url = `${getBaseUrl()}${endpoint}`;
     const res = await fetch(url, {
         method,
@@ -20,7 +22,9 @@ async function fetchJson<T>(
             "X-DigiRakshak-Key": "dr-mobile-app-key",
         },
         body: body ? JSON.stringify(body) : undefined,
+        signal,
     });
+
 
     if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: "Unknown error" }));
@@ -54,10 +58,12 @@ export interface SMSAnalysisResult {
 
 export async function analyzeSMS(
     text: string,
-    sender?: string
+    sender?: string,
+    signal?: AbortSignal
 ): Promise<SMSAnalysisResult> {
-    return fetchJson("/sms/analyze", "POST", { text, sender });
+    return fetchJson("/sms/analyze", "POST", { text, sender }, signal);
 }
+
 
 export async function checkURL(url: string): Promise<{
     url: string;
